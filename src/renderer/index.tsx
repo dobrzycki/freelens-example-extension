@@ -20,8 +20,10 @@ import {
   ExampleActiveToggleMenuItem as ExampleActiveToggleMenuItem_v1alpha2,
   type ExampleActiveToggleMenuItemProps as ExampleActiveToggleMenuItemProps_v1alpha2,
 } from "./menus/example-active-toggle-menu-item-v1alpha2";
+import { PodJsonLogsMenuItem, type PodJsonLogsMenuItemProps } from "./menus/pod-json-logs-menu-item";
 import { ExamplesPage as ExamplesPageV1alpha1 } from "./pages/examples-page-v1alpha1";
 import { ExamplesPage as ExamplesPageV1alpha2 } from "./pages/examples-page-v1alpha2";
+import { PodJsonLogsPage } from "./pages/pod-json-logs-page";
 import { ExamplePreferenceHint, ExamplePreferenceInput } from "./preferences/example-preference";
 
 export default class ExampleRenderer extends Renderer.LensExtension {
@@ -72,6 +74,12 @@ export default class ExampleRenderer extends Renderer.LensExtension {
 
   clusterPages = [
     {
+      id: "pod-json-logs",
+      components: {
+        Page: () => <PodJsonLogsPage extension={this} />,
+      },
+    },
+    {
       id: "example",
       components: {
         Page: () => <ExamplesPageV1alpha1 extension={this} />,
@@ -106,6 +114,13 @@ export default class ExampleRenderer extends Renderer.LensExtension {
   ];
 
   kubeObjectMenuItems = [
+    {
+      kind: "Pod",
+      apiVersions: ["v1"],
+      components: {
+        MenuItem: (props: PodJsonLogsMenuItemProps) => <PodJsonLogsMenuItem {...props} extension={this} />,
+      },
+    },
     {
       kind: ExampleV1alpha1.kind,
       apiVersions: ExampleV1alpha1.crd.apiVersions,
