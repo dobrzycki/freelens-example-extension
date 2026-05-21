@@ -8,6 +8,7 @@ import { ExamplePreferencesStore } from "../common/store";
 import { createAvailableVersionPage } from "./components/available-version";
 import { ExampleDetails as ExampleDetailsV1alpha1 } from "./details/example-details-v1alpha1";
 import { ExampleDetails as ExampleDetailsV1alpha2 } from "./details/example-details-v1alpha2";
+import { PodJsonLogs } from "./details/pod-json-logs";
 import { ExampleIcon } from "./icons";
 import { Example as ExampleV1alpha1 } from "./k8s/example/example-v1alpha1";
 import { Example as ExampleV1alpha2 } from "./k8s/example/example-v1alpha2";
@@ -39,6 +40,16 @@ export default class ExampleRenderer extends Renderer.LensExtension {
   ];
 
   kubeObjectDetailItems = [
+    {
+      kind: "Pod",
+      apiVersions: ["v1"],
+      priority: 50,
+      components: {
+        Details: (props: Renderer.Component.KubeObjectDetailsProps<any>) => (
+          <PodJsonLogs {...props} extension={this} />
+        ),
+      },
+    },
     {
       kind: ExampleV1alpha1.kind,
       apiVersions: ExampleV1alpha1.crd.apiVersions,
