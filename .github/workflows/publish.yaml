@@ -1,0 +1,88 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  publish:
+    name: publish
+    runs-on: ubuntu-22.04
+
+    env:
+      VITE_PRESERVE_MODULES: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "${GITHUB_REF_NAME}" = "v$(yq -r .version package.json)"
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://npm.pkg.github.com
+          scope: "@dobrzycki"
+
+      - name: Setup pnpm
+        run: corepack enable
+
+      - name: Get pnpm cache directory
+        run: echo "pnpm_cache_dir=$(pnpm store path)" >> ${GITHUB_ENV}
+
+      - name: Use pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.pnpm_cache_dir }}
+          key: ubuntu-22.04-x64-node-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ubuntu-22.04-x64-node-
+
+      - name: Install dependencies
+        run: pnpm install --color=always --prefer-offline --frozen-lockfile
+
+      - name: Build
+        run: pnpm --color=always --stream build
+
+      - name: Pack tarball
+        run: pnpm --color=always pack
+
+      - name: Configure auth for GitHub Packages
+        run: |
+          cat > .npmrc <<EOF
+          @dobrzycki:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          always-auth=true
+          EOF
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            *-*) dist_tag=next ;;
+            *)   dist_tag=latest ;;
+          esac
+          pnpm --color=always publish --no-git-checks --tag "${dist_tag}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release with tarball
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: |-
+            *.tgz
