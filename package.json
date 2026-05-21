@@ -1,10 +1,10 @@
 {
-  "name": "@freelensapp/example-extension",
+  "name": "@dobrzycki/freelens-example-extension",
   "version": "1.9.1-0",
   "description": "Example of a Freelens extension",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/freelensapp/freelens-example-extension.git",
+    "url": "git+https://github.com/dobrzycki/freelens-example-extension.git",
     "directory": "."
   },
   "main": "out/main/index.js",
@@ -24,7 +24,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "biome": "pnpm dlx @biomejs/biome@2.4.14",
