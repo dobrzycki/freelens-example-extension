@@ -4,7 +4,7 @@
  */
 
 import { Renderer } from "@freelensapp/extensions";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { withErrorPage } from "../components/error-page";
 
 const {
@@ -171,7 +171,7 @@ export const PodJsonLogs = (props: PodJsonLogsProps) =>
       }
     };
 
-    if (!pod || pod.kind !== "Pod") return null;
+    if (!pod || pod.kind !== "Pod") return <></>;
 
     return (
       <div>
