@@ -4,12 +4,12 @@
  */
 
 import { Renderer } from "@freelensapp/extensions";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type * as React from "react";
 
 const {
-  Component: { Select, Button, Input, Icon },
+  Component: { Select, Button, Input, Icon, Checkbox, SearchInput },
   K8sApi: { podsApi },
 } = Renderer;
 
@@ -77,7 +77,39 @@ const KNOWN_KEYS = new Set([
   "log",
 ]);
 
-function renderJsonLine(json: Record<string, unknown>, idx: number) {
+function lineSearchHaystack(line: ParsedLine): string {
+  if (line.json) {
+    // Search the raw JSON text — covers all keys/values.
+    return line.raw.toLowerCase();
+  }
+  return line.raw.toLowerCase();
+}
+
+function highlight(text: string, q: string): React.ReactNode {
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const ql = q.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(ql, i);
+    if (idx === -1) {
+      out.push(text.slice(i));
+      break;
+    }
+    if (idx > i) out.push(text.slice(i, idx));
+    out.push(
+      <mark key={`hl-${key++}`} style={{ background: "#facc15", color: "#000", padding: 0, borderRadius: 2 }}>
+        {text.slice(idx, idx + q.length)}
+      </mark>,
+    );
+    i = idx + q.length;
+  }
+  return out;
+}
+
+function renderJsonLine(json: Record<string, unknown>, idx: number, search: string) {
   const ts = formatTs(pickFirst(json, ["timestamp", "time", "@timestamp", "ts"]));
   const level = (pickFirst(json, ["level", "severity", "lvl"]) ?? "").toUpperCase();
   const logger = pickFirst(json, ["logger_name", "logger", "loggerName"]);
@@ -94,7 +126,7 @@ function renderJsonLine(json: Record<string, unknown>, idx: number) {
         {thread && <span style={{ fontFamily: "monospace" }}>[{thread}]</span>}
         {logger && <span style={{ fontFamily: "monospace", opacity: 0.7 }}>{logger}</span>}
       </div>
-      <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: 2 }}>{message}</div>
+      <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: 2 }}>{highlight(message, search)}</div>
       {extras.length > 0 && (
         <details style={{ marginTop: 2 }}>
           <summary style={{ cursor: "pointer", fontSize: 11, opacity: 0.6 }}>+{extras.length} field(s)</summary>
@@ -107,7 +139,7 @@ function renderJsonLine(json: Record<string, unknown>, idx: number) {
   );
 }
 
-function renderRawLine(raw: string, idx: number) {
+function renderRawLine(raw: string, idx: number, search: string) {
   return (
     <div
       key={idx}
@@ -121,7 +153,7 @@ function renderRawLine(raw: string, idx: number) {
         borderBottom: "1px solid rgba(127,127,127,0.1)",
       }}
     >
-      {raw}
+      {highlight(raw, search)}
     </div>
   );
 }
@@ -131,6 +163,8 @@ export interface PodJsonLogsViewerProps {
   /** "drawer" caps height; "page" fills available space */
   variant?: "drawer" | "page";
 }
+
+const POLL_MS = 3000;
 
 export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewerProps) => {
   const containers = useMemo(() => {
@@ -143,28 +177,70 @@ export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewer
   const [container, setContainer] = useState<string>(containers[0]?.name ?? "");
   const [tailLines, setTailLines] = useState<string>("200");
   const [previous, setPrevious] = useState<boolean>(false);
+  const [follow, setFollow] = useState<boolean>(false);
+  const [search, setSearch] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [lines, setLines] = useState<ParsedLine[]>([]);
+
+  // Refs to avoid stale closures in the polling interval.
+  const linesRef = useRef<ParsedLine[]>([]);
+  const containerRef = useRef<string>(container);
+  const previousRef = useRef<boolean>(previous);
+  const tailRef = useRef<string>(tailLines);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
+  useEffect(() => {
+    containerRef.current = container;
+  }, [container]);
+  useEffect(() => {
+    previousRef.current = previous;
+  }, [previous]);
+  useEffect(() => {
+    tailRef.current = tailLines;
+  }, [tailLines]);
+
+  const fetchLogs = async (mode: "replace" | "append"): Promise<void> => {
+    const c = containerRef.current;
+    if (!c) return;
+    const tail = Number.parseInt(tailRef.current, 10);
+    const opts: any = {
+      container: c,
+      tailLines: Number.isFinite(tail) && tail > 0 ? tail : 200,
+      previous: previousRef.current,
+      timestamps: false,
+    };
+    const raw = await podsApi.getLogs({ namespace: pod.getNs(), name: pod.getName() }, opts);
+    const text = typeof raw === "string" ? raw : "";
+    const incoming = text.split("\n").filter((l) => l.length > 0);
+
+    if (mode === "replace") {
+      setLines(incoming.map(parseLine));
+      return;
+    }
+    // Append: dedupe against existing tail by finding overlap of last seen line.
+    const prev = linesRef.current;
+    if (prev.length === 0) {
+      setLines(incoming.map(parseLine));
+      return;
+    }
+    const lastSeen = prev[prev.length - 1].raw;
+    const overlapIdx = incoming.lastIndexOf(lastSeen);
+    const fresh = overlapIdx >= 0 ? incoming.slice(overlapIdx + 1) : incoming;
+    if (fresh.length > 0) {
+      setLines((cur) => [...cur, ...fresh.map(parseLine)]);
+    }
+  };
 
   const load = async () => {
     if (!container) return;
     setLoading(true);
     setError(null);
     try {
-      const tail = Number.parseInt(tailLines, 10);
-      const raw = await podsApi.getLogs({ namespace: pod.getNs(), name: pod.getName() }, {
-        container,
-        tailLines: Number.isFinite(tail) && tail > 0 ? tail : 200,
-        previous,
-        timestamps: false,
-      } as any);
-      const text = typeof raw === "string" ? raw : "";
-      const parsed = text
-        .split("\n")
-        .filter((l) => l.length > 0)
-        .map(parseLine);
-      setLines(parsed);
+      await fetchLogs("replace");
     } catch (e) {
       setError(String(e));
       setLines([]);
@@ -172,6 +248,42 @@ export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewer
       setLoading(false);
     }
   };
+
+  // Polling while follow is on. Reset on container/previous/tail change.
+  useEffect(() => {
+    if (!follow || !container) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        await fetchLogs(linesRef.current.length === 0 ? "replace" : "append");
+        setError(null);
+      } catch (e) {
+        setError(String(e));
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [follow, container, previous]);
+
+  // Auto-scroll to bottom while following, but only if user is already near it.
+  useEffect(() => {
+    if (!follow) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [lines, follow]);
+
+  const filtered = useMemo(() => {
+    if (!search) return lines;
+    const q = search.toLowerCase();
+    return lines.filter((l) => lineSearchHaystack(l).includes(q));
+  }, [lines, search]);
 
   const logBoxStyle: React.CSSProperties =
     variant === "page"
@@ -210,30 +322,41 @@ export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewer
             themeName="lens"
           />
         </div>
-        <div style={{ width: 100 }}>
+        <div style={{ width: 110 }}>
           <Input type="number" value={tailLines} onChange={(v: string) => setTailLines(v)} placeholder="tail lines" />
         </div>
-        <label style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
-          <input type="checkbox" checked={previous} onChange={(e) => setPrevious(e.target.checked)} />
-          previous
-        </label>
-        <Button primary label={loading ? "Loading..." : "Load logs"} onClick={load} disabled={loading || !container} />
+        <Checkbox label="Previous" value={previous} onChange={(v: boolean) => setPrevious(v)} />
+        <Checkbox label="Follow" value={follow} onChange={(v: boolean) => setFollow(v)} />
+        <Button
+          primary
+          label={loading ? "Loading..." : follow ? "Reload" : "Load logs"}
+          onClick={load}
+          disabled={loading || !container}
+        />
         {lines.length > 0 && (
           <span style={{ fontSize: 12, opacity: 0.7 }}>
-            {lines.filter((l) => l.json).length}/{lines.length} parsed as JSON
+            {filtered.length}/{lines.length} lines
+            {search ? ` (matches "${search}")` : ""}
           </span>
         )}
+      </div>
+      <div style={{ padding: "0 0 8px", maxWidth: 480 }}>
+        <SearchInput value={search} onChange={(v: string) => setSearch(v)} placeholder="Filter / search…" />
       </div>
       {error && (
         <div style={{ color: "#ef4444", padding: 8, display: "flex", alignItems: "center", gap: 6 }}>
           <Icon material="error" small /> {error}
         </div>
       )}
-      <div style={logBoxStyle}>
-        {lines.length === 0 && !loading && (
-          <div style={{ opacity: 0.6, fontSize: 12 }}>No logs loaded. Pick a container and click "Load logs".</div>
+      <div ref={scrollRef} style={logBoxStyle}>
+        {filtered.length === 0 && !loading && (
+          <div style={{ opacity: 0.6, fontSize: 12 }}>
+            {lines.length === 0
+              ? 'No logs loaded. Pick a container and click "Load logs" (or toggle Follow).'
+              : "No lines match the current filter."}
+          </div>
         )}
-        {lines.map((l, i) => (l.json ? renderJsonLine(l.json, i) : renderRawLine(l.raw, i)))}
+        {filtered.map((l, i) => (l.json ? renderJsonLine(l.json, i, search) : renderRawLine(l.raw, i, search)))}
       </div>
     </div>
   );
