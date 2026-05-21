@@ -1,6 +1,6 @@
 {
   "name": "@dobrzycki/freelens-example-extension",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "Example of a Freelens extension",
   "repository": {
     "type": "git",
