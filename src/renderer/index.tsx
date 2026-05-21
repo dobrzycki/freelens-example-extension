@@ -45,9 +45,7 @@ export default class ExampleRenderer extends Renderer.LensExtension {
       apiVersions: ["v1"],
       priority: 50,
       components: {
-        Details: (props: Renderer.Component.KubeObjectDetailsProps<any>) => (
-          <PodJsonLogs {...props} extension={this} />
-        ),
+        Details: (props: Renderer.Component.KubeObjectDetailsProps<any>) => <PodJsonLogs {...props} extension={this} />,
       },
     },
     {

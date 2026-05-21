@@ -72,11 +72,21 @@ function renderJsonLine(json: Record<string, unknown>, idx: number) {
 
   // Collect extras (anything else worth showing)
   const known = new Set([
-    "timestamp", "time", "@timestamp", "ts",
-    "level", "severity", "lvl",
-    "logger_name", "logger", "loggerName",
-    "thread_name", "thread",
-    "message", "msg", "log",
+    "timestamp",
+    "time",
+    "@timestamp",
+    "ts",
+    "level",
+    "severity",
+    "lvl",
+    "logger_name",
+    "logger",
+    "loggerName",
+    "thread_name",
+    "thread",
+    "message",
+    "msg",
+    "log",
   ]);
   const extras = Object.entries(json).filter(([k]) => !known.has(k));
 
@@ -86,9 +96,7 @@ function renderJsonLine(json: Record<string, unknown>, idx: number) {
     <div key={idx} style={{ padding: "4px 0", borderBottom: "1px solid rgba(127,127,127,0.15)" }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, opacity: 0.85 }}>
         {ts && <span style={{ fontFamily: "monospace" }}>{ts}</span>}
-        {level && (
-          <span style={{ color, fontWeight: 600, fontFamily: "monospace", minWidth: 50 }}>{level}</span>
-        )}
+        {level && <span style={{ color, fontWeight: 600, fontFamily: "monospace", minWidth: 50 }}>{level}</span>}
         {thread && <span style={{ fontFamily: "monospace" }}>[{thread}]</span>}
         {logger && <span style={{ fontFamily: "monospace", opacity: 0.7 }}>{logger}</span>}
       </div>
@@ -148,15 +156,12 @@ export const PodJsonLogs = (props: PodJsonLogsProps) =>
       setError(null);
       try {
         const tail = Number.parseInt(tailLines, 10);
-        const raw = await podsApi.getLogs(
-          { namespace: pod.getNs(), name: pod.getName() },
-          {
-            container,
-            tailLines: Number.isFinite(tail) && tail > 0 ? tail : 200,
-            previous,
-            timestamps: false,
-          } as any,
-        );
+        const raw = await podsApi.getLogs({ namespace: pod.getNs(), name: pod.getName() }, {
+          container,
+          tailLines: Number.isFinite(tail) && tail > 0 ? tail : 200,
+          previous,
+          timestamps: false,
+        } as any);
         const text = typeof raw === "string" ? raw : "";
         const parsed = text
           .split("\n")
@@ -186,18 +191,18 @@ export const PodJsonLogs = (props: PodJsonLogsProps) =>
             />
           </div>
           <div style={{ width: 100 }}>
-            <Input
-              type="number"
-              value={tailLines}
-              onChange={(v: string) => setTailLines(v)}
-              placeholder="tail lines"
-            />
+            <Input type="number" value={tailLines} onChange={(v: string) => setTailLines(v)} placeholder="tail lines" />
           </div>
           <label style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
             <input type="checkbox" checked={previous} onChange={(e) => setPrevious(e.target.checked)} />
             previous
           </label>
-          <Button primary label={loading ? "Loading..." : "Load logs"} onClick={load} disabled={loading || !container} />
+          <Button
+            primary
+            label={loading ? "Loading..." : "Load logs"}
+            onClick={load}
+            disabled={loading || !container}
+          />
           {lines.length > 0 && (
             <span style={{ fontSize: 12, opacity: 0.7 }}>
               {lines.filter((l) => l.json).length}/{lines.length} parsed as JSON
