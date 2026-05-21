@@ -1,7 +1,8 @@
 import { Common, type Renderer } from "@freelensapp/extensions";
-import React from "react";
 import styles from "./error-page.module.scss";
 import stylesInline from "./error-page.module.scss?inline";
+
+import type * as React from "react";
 
 export interface ErrorPageProps {
   error?: unknown;

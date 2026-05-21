@@ -4,9 +4,9 @@
  */
 
 import { Renderer } from "@freelensapp/extensions";
-import { useEffect, useMemo, useRef, useState } from "react";
+import * as React from "react";
 
-import type * as React from "react";
+const { useEffect, useMemo, useRef, useState } = React;
 
 const {
   Component: { Select, Button, Input, Icon, Checkbox, SearchInput },

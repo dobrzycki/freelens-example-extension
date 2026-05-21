@@ -5,7 +5,10 @@
 
 import { Renderer } from "@freelensapp/extensions";
 import * as MobxReact from "mobx-react";
-import { useEffect, useState } from "react";
+import * as React from "react";
+
+const { useEffect, useState } = React;
+
 import { withErrorPage } from "../components/error-page";
 import { PodJsonLogsViewer } from "../components/pod-json-logs-viewer";
 import { podJsonLogsSelection } from "./pod-json-logs-store";
