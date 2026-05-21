@@ -119,18 +119,27 @@ function renderJsonLine(json: Record<string, unknown>, idx: number, search: stri
   const color = LEVEL_COLORS[level] ?? "inherit";
 
   return (
-    <div key={idx} style={{ padding: "4px 0", borderBottom: "1px solid rgba(127,127,127,0.15)" }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, opacity: 0.85 }}>
-        {ts && <span style={{ fontFamily: "monospace" }}>{ts}</span>}
-        {level && <span style={{ color, fontWeight: 600, fontFamily: "monospace", minWidth: 50 }}>{level}</span>}
-        {thread && <span style={{ fontFamily: "monospace" }}>[{thread}]</span>}
-        {logger && <span style={{ fontFamily: "monospace", opacity: 0.7 }}>{logger}</span>}
+    <div
+      key={idx}
+      style={{
+        padding: "1px 0",
+        fontFamily: "monospace",
+        fontSize: 11,
+        lineHeight: 1.35,
+        borderBottom: "1px solid rgba(127,127,127,0.08)",
+      }}
+    >
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
+        {ts && <span style={{ opacity: 0.65 }}>{ts}</span>}
+        {level && <span style={{ color, fontWeight: 600, minWidth: 44 }}>{level}</span>}
+        {thread && <span style={{ opacity: 0.7 }}>[{thread}]</span>}
+        {logger && <span style={{ opacity: 0.6 }}>{logger}</span>}
+        <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1 }}>{highlight(message, search)}</span>
       </div>
-      <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: 2 }}>{highlight(message, search)}</div>
       {extras.length > 0 && (
-        <details style={{ marginTop: 2 }}>
-          <summary style={{ cursor: "pointer", fontSize: 11, opacity: 0.6 }}>+{extras.length} field(s)</summary>
-          <pre style={{ fontSize: 11, margin: "4px 0 0", whiteSpace: "pre-wrap" }}>
+        <details>
+          <summary style={{ cursor: "pointer", fontSize: 10, opacity: 0.55 }}>+{extras.length} field(s)</summary>
+          <pre style={{ fontSize: 10, margin: "2px 0 0", whiteSpace: "pre-wrap" }}>
             {extras.map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n")}
           </pre>
         </details>
@@ -144,13 +153,14 @@ function renderRawLine(raw: string, idx: number, search: string) {
     <div
       key={idx}
       style={{
-        padding: "2px 0",
+        padding: "1px 0",
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
         fontFamily: "monospace",
-        fontSize: 12,
+        fontSize: 11,
+        lineHeight: 1.35,
         opacity: 0.85,
-        borderBottom: "1px solid rgba(127,127,127,0.1)",
+        borderBottom: "1px solid rgba(127,127,127,0.08)",
       }}
     >
       {highlight(raw, search)}
@@ -179,9 +189,11 @@ export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewer
   const [previous, setPrevious] = useState<boolean>(false);
   const [follow, setFollow] = useState<boolean>(false);
   const [search, setSearch] = useState<string>("");
+  const [levelFilter, setLevelFilter] = useState<string>("ALL");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [lines, setLines] = useState<ParsedLine[]>([]);
+  const stickToBottomRef = useRef<boolean>(true);
 
   // Refs to avoid stale closures in the polling interval.
   const linesRef = useRef<ParsedLine[]>([]);
@@ -270,20 +282,44 @@ export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewer
     };
   }, [follow, container, previous]);
 
-  // Auto-scroll to bottom while following, but only if user is already near it.
+  // When follow turns on: snap to bottom and re-arm sticky-scroll.
+  useEffect(() => {
+    if (!follow) return;
+    stickToBottomRef.current = true;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [follow]);
+
+  // While following, keep pinned to bottom unless user scrolled up.
   useEffect(() => {
     if (!follow) return;
     const el = scrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [lines, follow]);
 
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 40;
+  };
+
   const filtered = useMemo(() => {
-    if (!search) return lines;
     const q = search.toLowerCase();
-    return lines.filter((l) => lineSearchHaystack(l).includes(q));
-  }, [lines, search]);
+    const lvl = levelFilter;
+    return lines.filter((l) => {
+      if (lvl !== "ALL") {
+        const lineLvl = l.json ? (pickFirst(l.json, ["level", "severity", "lvl"]) ?? "").toUpperCase() : "";
+        // Treat WARNING as WARN, FATAL/SEVERE as ERROR for filtering convenience.
+        const norm = lineLvl === "WARNING" ? "WARN" : lineLvl === "FATAL" || lineLvl === "SEVERE" ? "ERROR" : lineLvl;
+        if (norm !== lvl) return false;
+      }
+      if (q && !lineSearchHaystack(l).includes(q)) return false;
+      return true;
+    });
+  }, [lines, search, levelFilter]);
 
   const logBoxStyle: React.CSSProperties =
     variant === "page"
@@ -292,16 +328,16 @@ export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewer
           minHeight: 0,
           overflow: "auto",
           border: "1px solid rgba(127,127,127,0.2)",
-          borderRadius: 4,
-          padding: 8,
+          borderRadius: 3,
+          padding: "4px 6px",
           background: "rgba(0,0,0,0.15)",
         }
       : {
           maxHeight: 480,
           overflow: "auto",
           border: "1px solid rgba(127,127,127,0.2)",
-          borderRadius: 4,
-          padding: 8,
+          borderRadius: 3,
+          padding: "4px 6px",
           background: "rgba(0,0,0,0.15)",
         };
 
@@ -309,12 +345,12 @@ export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewer
     <div
       style={
         variant === "page"
-          ? { display: "flex", flexDirection: "column", height: "100%", padding: 16, gap: 8 }
+          ? { display: "flex", flexDirection: "column", height: "100%", padding: "4px 8px 8px", gap: 4 }
           : undefined
       }
     >
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "0 0 8px" }}>
-        <div style={{ minWidth: 200 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", padding: "0 0 4px" }}>
+        <div style={{ minWidth: 180 }}>
           <Select
             value={container}
             options={containers.map((c) => ({ value: c.name, label: c.init ? `${c.name} (init)` : c.name }))}
@@ -340,15 +376,32 @@ export const PodJsonLogsViewer = ({ pod, variant = "drawer" }: PodJsonLogsViewer
           </span>
         )}
       </div>
-      <div style={{ padding: "0 0 8px", maxWidth: 480 }}>
-        <SearchInput value={search} onChange={(v: string) => setSearch(v)} placeholder="Filter / search…" />
+      <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "0 0 4px", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200, maxWidth: 480 }}>
+          <SearchInput value={search} onChange={(v: string) => setSearch(v)} placeholder="Filter / search…" />
+        </div>
+        <div style={{ minWidth: 140 }}>
+          <Select
+            value={levelFilter}
+            options={[
+              { value: "ALL", label: "All levels" },
+              { value: "TRACE", label: "TRACE" },
+              { value: "DEBUG", label: "DEBUG" },
+              { value: "INFO", label: "INFO" },
+              { value: "WARN", label: "WARN" },
+              { value: "ERROR", label: "ERROR" },
+            ]}
+            onChange={(opt: any) => setLevelFilter(opt?.value ?? "ALL")}
+            themeName="lens"
+          />
+        </div>
       </div>
       {error && (
         <div style={{ color: "#ef4444", padding: 8, display: "flex", alignItems: "center", gap: 6 }}>
           <Icon material="error" small /> {error}
         </div>
       )}
-      <div ref={scrollRef} style={logBoxStyle}>
+      <div ref={scrollRef} onScroll={onScroll} style={logBoxStyle}>
         {filtered.length === 0 && !loading && (
           <div style={{ opacity: 0.6, fontSize: 12 }}>
             {lines.length === 0

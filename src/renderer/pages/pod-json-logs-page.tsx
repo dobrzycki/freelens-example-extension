@@ -4,16 +4,12 @@
  */
 
 import { Renderer } from "@freelensapp/extensions";
-import * as MobxReact from "mobx-react";
 import * as React from "react";
-
-const { useEffect, useState } = React;
-
 import { withErrorPage } from "../components/error-page";
 import { PodJsonLogsViewer } from "../components/pod-json-logs-viewer";
-import { podJsonLogsSelection } from "./pod-json-logs-store";
+import { type PodSelection, podJsonLogsSelection } from "./pod-json-logs-store";
 
-const { observer } = MobxReact;
+const { useEffect, useState } = React;
 
 const {
   K8sApi: { podsApi },
@@ -25,9 +21,15 @@ export interface PodJsonLogsPageProps {
   extension: Renderer.LensExtension;
 }
 
-export const PodJsonLogsPage = observer((props: PodJsonLogsPageProps) =>
+function useSelection(): PodSelection | null {
+  const [sel, setSel] = useState<PodSelection | null>(podJsonLogsSelection.get());
+  useEffect(() => podJsonLogsSelection.subscribe(() => setSel(podJsonLogsSelection.get())), []);
+  return sel;
+}
+
+export const PodJsonLogsPage = (props: PodJsonLogsPageProps) =>
   withErrorPage(props, () => {
-    const sel = podJsonLogsSelection.get();
+    const sel = useSelection();
     const [pod, setPod] = useState<Pod | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -77,16 +79,46 @@ export const PodJsonLogsPage = observer((props: PodJsonLogsPageProps) =>
       );
     }
 
+    const close = () => {
+      podJsonLogsSelection.set(null);
+      if (window.history.length > 1) window.history.back();
+    };
+
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <div style={{ padding: "12px 16px 0", display: "flex", alignItems: "baseline", gap: 8 }}>
-          <h2 style={{ margin: 0 }}>JSON Logs</h2>
-          <span style={{ opacity: 0.7, fontFamily: "monospace" }}>
+        <div
+          style={{
+            padding: "6px 10px 2px",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <strong style={{ fontSize: 13 }}>JSON Logs</strong>
+          <span style={{ opacity: 0.7, fontFamily: "monospace", fontSize: 12 }}>
             {sel.namespace}/{sel.name}
           </span>
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={close}
+            title="Close"
+            aria-label="Close JSON Logs"
+            style={{
+              background: "transparent",
+              border: "1px solid rgba(127,127,127,0.3)",
+              borderRadius: 3,
+              cursor: "pointer",
+              color: "inherit",
+              fontSize: 14,
+              lineHeight: 1,
+              padding: "2px 8px",
+            }}
+          >
+            ×
+          </button>
         </div>
         <PodJsonLogsViewer pod={pod} variant="page" />
       </div>
     );
-  }),
-);
+  });
